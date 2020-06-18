@@ -1,4 +1,7 @@
 # -*- coding: UTF-8 -*-
+import json
+import os
+
 
 class MaxObject:
     def __init__(self, data, layer=0):
@@ -6,34 +9,33 @@ class MaxObject:
         self._data = None
         self._layer = layer
 
+        self._is_debug = os.getenv('mi_debug', False) == 'true'
+
         if len(data.keys()) == 1:
             self._name, self._data = data.items()[0]
         else:
             self._data = data
 
-        if not self.is_color():
-            self._log('[{}:{}]'.format(self.get_class(), self._name))
+        self._log('[{}:{}]'.format(self.get_class(), self._name))
 
-    def _log(self, msg, newline=True):
-        msg = msg.rjust(self._layer * 2 + len(msg))
-        print(msg)
+    def _log(self, msg):
+        if self._is_debug:
+            msg = msg.rjust(self._layer * 2 + len(msg))
+            print(msg)
 
-    def is_color(self):
-        return self._name == 'color'
+    @staticmethod
+    def is_color(value):
+        if not isinstance(value, dict):
+            return False
+        return len(value.keys()) == 1 and 'color' in value
 
     def get_super_class(self):
         return self._data['max_superclass']
 
     def get_class(self):
-        if self.is_color():
-            return 'color'
         return self._data['max_class']
 
     def get_texture(self):
-        # color
-        if self.is_color():
-            return self._get_end('color', self._data)
-
         super_class = self.get_super_class()
         this_class = self.get_class()
 
@@ -49,13 +51,19 @@ class MaxObject:
 
             # Multimaterial
             if this_class == 'Multimaterial':
+                idx_list = []
+                for d in self._data['materialIDList']['int_array']:
+                    idx = d['int'] - 1
+                    idx_list.append(idx)
+
+                mat_list = [None] * (max(idx_list) + 1)
                 material_list = self._data['materialList']['material_array']
+                for idx, mat in zip(idx_list, material_list):
+                    mat_list[idx] = self._get_texture_from_value(mat)
+
                 return self._get_end(
                     'multi',
-                    [
-                        self._get_texture_from_value(mat)
-                        for mat in material_list
-                    ]
+                    mat_list
                 )
 
         # textureMap
@@ -81,31 +89,23 @@ class MaxObject:
 
             # Mix
             if this_class == 'Mix':
-                return self._get_end(
-                    'mix',
-                    {
-                        'map1': self._get_texture_from_fields(
-                            'map1', 'color1'
-                        ),
-                        'map2': self._get_texture_from_fields(
-                            'map2', 'color2'
-                        ),
-                        'mask': self._get_texture_from_fields(
-                            'mask'
-                        )
-                    }
+                return self._get_texture_from_fields(
+                    'map1', 'color1'
                 )
 
             # VRayHDRI
             if this_class == 'VRayHDRI':
                 return self._get_end(
-                    'hdri',
+                    'texture',
                     self._data['HDRIMapName']['filename']
                 )
 
             # Bitmap
             if this_class == 'Bitmaptexture':
-                return self._get_end('bitmap', self._data['fileName']['filename'])
+                return self._get_end(
+                    'texture',
+                    self._data['fileName']['filename']
+                )
 
             # CompositeTexturemap
             if this_class == 'CompositeTexturemap':
@@ -138,7 +138,10 @@ class MaxObject:
         )
 
     def _get_end(self, map_type, value):
+        if map_type != 'multi':
+            value = self.convert_houdini_value(map_type, value)
         object = {
+            'class': self.get_class(),
             'type': map_type,
             'value': value
         }
@@ -146,4 +149,22 @@ class MaxObject:
         return object
 
     def _get_texture_from_value(self, field):
+        if self.is_color(field):
+            return self._get_end('color', field['color'])
         return MaxObject(field, self._layer + 1).get_texture()
+
+    @staticmethod
+    def convert_houdini_value(map_type, value):
+        if map_type == 'texture':
+            return json.dumps({
+                'basecolor_useTexture': 1,
+                'basecolor_texture': value
+            })
+        elif map_type == 'color':
+            return json.dumps({
+                'basecolorr': value['r'] / 255,
+                'basecolorg': value['g'] / 255,
+                'basecolorb': value['b'] / 255,
+            })
+
+        raise ValueError('Invalid Map Type')
