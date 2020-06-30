@@ -4,7 +4,7 @@ import os
 
 
 os.environ['mi_debug'] = 'true'
-test_path = 'import/ShanghaiCity.tower.v001.json'
+test_path = 'c:/users/moonshine/Desktop/demo/ShanghaiCity.v69.cleanup.json'
 
 decoder = MaxMaterialDecoder(test_path)
 data = decoder.get_texture()

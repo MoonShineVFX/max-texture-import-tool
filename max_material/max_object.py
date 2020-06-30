@@ -3,6 +3,9 @@ import json
 import os
 
 
+IN_MULTI = False
+
+
 class MaxObject:
     def __init__(self, data, layer=0):
         self._name = None
@@ -16,7 +19,7 @@ class MaxObject:
         else:
             self._data = data
 
-        self._log('[{}:{}]'.format(self.get_class(), self._name))
+        self._log(u'[{}:{}]'.format(self.get_class(), self._name))
 
     def _log(self, msg):
         if self._is_debug:
@@ -51,6 +54,15 @@ class MaxObject:
 
             # Multimaterial
             if this_class == 'Multimaterial':
+                global IN_MULTI
+
+                if IN_MULTI:
+                    return self._get_texture_from_value(
+                        self._data['materialList']['material_array'][0]
+                    )
+                else:
+                    IN_MULTI = True
+
                 idx_list = []
                 for d in self._data['materialIDList']['int_array']:
                     idx = d['int'] - 1
@@ -61,10 +73,33 @@ class MaxObject:
                 for idx, mat in zip(idx_list, material_list):
                     mat_list[idx] = self._get_texture_from_value(mat)
 
+                IN_MULTI = False
+
                 return self._get_end(
                     'multi',
                     mat_list
                 )
+
+            # Standardmaterial
+            if this_class == 'Standardmaterial':
+                bool_array = self._data['mapEnables']['boolean_array']
+                if bool_array[1]['boolean']:
+                    return self._get_texture_from_value(self._data['maps']['texturemap_array'][0])
+                if 'diffuse' in self._data:
+                    return self._get_texture_from_fields('diffuse')
+                return None
+
+            # Blend
+            if this_class == 'Blend':
+                return self._get_texture_from_fields('map1', 'map2')
+
+            # VRay2SidedMtl
+            if this_class == 'VRay2SidedMtl':
+                return self._get_texture_from_fields('frontMtl', 'backMtl')
+
+            # VRayLightMtl
+            if this_class == 'VRayLightMtl':
+                return self._get_texture_from_fields('texmap', 'color')
 
         # textureMap
         if super_class == 'textureMap':
@@ -116,11 +151,46 @@ class MaxObject:
             if this_class == 'VRayColor':
                 return self._get_texture_from_fields('color')
 
+            # Color_Correction
+            if this_class == 'Color_Correction':
+                return self._get_texture_from_fields('map', 'color')
+
+            # VRayCompTex
+            if this_class == 'VRayCompTex':
+                return self._get_texture_from_fields('sourceA')
+
+            # VRayEdgesTex
+            if this_class == 'VRayEdgesTex':
+                return self._get_texture_from_fields('edgesColor')
+
+            # Bricks
+            if this_class == 'Bricks':
+                return self._get_texture_from_fields('Brick_Color')
+
+            # Stucco
+            if this_class == 'Stucco':
+                return self._get_texture_from_fields('map1', 'map2', 'color1', 'color2')
+
+            # falloff
+            if this_class == 'falloff':
+                return self._get_texture_from_fields('map1', 'map2', 'color1', 'color2')
+
+            # RGB_Tint
+            if this_class == 'RGB_Tint':
+                return self._get_texture_from_fields('map1')
+
+            # VRayDirt
+            if this_class == 'VRayDirt':
+                return self._get_texture_from_fields('unoccluded_color')
+
+
+        self._debug_value(self._data)
         raise ValueError(
-            'Unable to get_texture: {} - {}'.format(
+            u'Unable to get_texture: {} - {} - {}'.format(
                 self.get_super_class(),
-                self.get_class()
-            )
+                self.get_class(),
+                self._name
+            ).encode('utf-8')
         )
 
     def _get_texture_from_fields(self, *fields):
@@ -130,11 +200,12 @@ class MaxObject:
                 self._log('└ {}'.format(field))
                 return self._get_texture_from_value(field_value)
         raise ValueError(
-            'Unable to get_texture_from_fields: {} - {} - {}'.format(
+            u'Unable to get_texture_from_fields: {} - {} - {} - {}'.format(
                 self.get_super_class(),
                 self.get_class(),
+                self._name,
                 fields
-            )
+            ).encode('utf-8')
         )
 
     def _get_end(self, map_type, value):
@@ -168,3 +239,7 @@ class MaxObject:
             })
 
         raise ValueError('Invalid Map Type')
+
+    def _debug_value(self, value):
+        print('-------------------debug-------------------')
+        print(json.dumps(value, indent=4))
