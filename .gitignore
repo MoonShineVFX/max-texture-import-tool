@@ -215,3 +215,5 @@ fabric.properties
 
 backup/
 /geo/
+/render/shanghai_city_baked.jpg
+/.idea/vcs.xml
